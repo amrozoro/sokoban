@@ -1,5 +1,5 @@
 .data
-gridsize:   .byte 8,8 #not a hard-coded value
+gridsize:   .byte 8,8 #not a hard-coded value, format is (row, column)
 character:  .byte 0,0
 box:        .byte 0,0
 target:     .byte 0,0
@@ -8,7 +8,6 @@ target:     .byte 0,0
 a: .word 6
 c: .word 1
 m: .word 25
-start_seed: .word 10
 
 space_char: .byte ' '
 wall_char: .byte 'X'
@@ -18,8 +17,6 @@ target_char: .byte 't'
 box_on_target_char: .byte '*'
 
 newline: .string "\n"
-loopCompletedString: .string "randomLoop has completed"
-randNumString: .string ""
 
 .text
 .globl _start
@@ -28,12 +25,19 @@ _start:
     # TODO: Generate locations for the character, box, and target. Static
     # locations in memory have been provided for the (x, y) coordinates 
     # of each of these elements.
-    # 
+    #
     # There is a notrand function that you can use to start with. It's 
     # really not very good; you will replace it with your own rand function
     # later. Regardless of the source of your "random" locations, make 
     # sure that none of the items are on top of each other and that the 
     # board is solvable.
+
+    jal gen_locations
+
+
+
+    
+
    
     # TODO: Now, print the gameboard. Select symbols to represent the walls,
     # character, box, and target. Write a function that uses the location of
@@ -72,7 +76,99 @@ exit:
     
 # --- HELPER FUNCTIONS ---
 
+gen_locations:
+    #locations cannot be on boundaries
+    gen_locations_character:
+        la a0, gridsize
+        lb a0, 0(a0)
+        addi a0, a0, -1 #max row rank (ranks start from 0)
+        jal rand
+        #updating character x (row) coordinate
+        la t0, character
+        sb a0, 0(t0)
 
+        la a0, gridsize
+        lb a0, 1(a0)
+        addi a0, a0, -1 #max column rank (ranks start from 0)
+        jal rand
+        #updating character y (column) coordinate
+        la t0, character
+        sb a0, 1(t0)
+
+    gen_locations_box:
+        la a0, gridsize
+        lb a0, 0(a0)
+        addi a0, a0, -1 #max row rank (ranks start from 0)
+        jal rand
+        #updating box x (row) coordinate
+        la t0, box
+        sb a0, 0(t0)
+
+        la a0, gridsize
+        lb a0, 1(a0)
+        addi a0, a0, -1 #max column rank (ranks start from 0)
+        jal rand
+        #updating box y (column) coordinate
+        la t0, box
+        sb a0, 1(t0)
+
+        #checking if box location is equal to character location and fixing if so...
+        la a0, box
+        la a1, character
+        jal check_location_equal
+        beq a0, zero, gen_locations_box
+
+        #TODO: make sure box does not spawn in a corner (because then the player won't be able to move it)
+
+
+    gen_locations_target:
+        la a0, gridsize
+        lb a0, 0(a0)
+        addi a0, a0, -1 #max row rank (ranks start from 0)
+        jal rand
+        #updating target x (row) coordinate
+        la t0, target
+        sb a0, 0(t0)
+
+        la a0, gridsize
+        lb a0, 1(a0)
+        addi a0, a0, -1 #max column rank (ranks start from 0)
+        jal rand
+        #updating target y (column) coordinate
+        la t0, target
+        sb a0, 1(t0)
+
+        #checking if target location is equal to the box location or character location and fixing if so...
+        la a0, target
+        la a1, character
+        jal check_location_equal
+        beq a0, zero, gen_locations_target
+        la a0, target
+        la a1, box
+        jal check_location_equal
+        beq a0, zero, gen_locations_target
+
+    jr ra
+
+
+#arguments a0 and a1 are the addresses of the locations in memory
+#sets a0 to 0 if locations are equal and to 1 if they are not
+check_location_equal:
+    lb t0, 0(a0)
+    lb t1, 1(a0)
+    lb t2, 0(a1)
+    lb t3, 1(a1)
+
+    bne t0, t2, check_location_equal_1
+    bne t1, t3, check_location_equal_1
+
+    check_location_equal_0:
+        li a0, 0
+        jr ra
+
+    check_location_equal_1:
+        li a0, 1
+        jr ra
 
 
 #Arguments: N/A
@@ -88,7 +184,7 @@ printBoard:
     printBoard_outerloop:
         addi s0, s0, 1
 
-        #load grid width
+        #load grid row count
         la t0, gridsize
         lb t0, 0(t0) #rows
 
@@ -99,7 +195,7 @@ printBoard:
 
         li s1, 0 #resetting column counter
         printBoard_innerloop:
-            #load grid length
+            #load grid column count
             la t0, gridsize
             lb t0, 1(t0) #columns
 
@@ -163,10 +259,10 @@ print_multiple_newlines:
 
 
 # Arguments: an integer MAX in a0
-# Return: A number from 0 (inclusive) to MAX (exclusive)
-# seed passed in as a1
+# Return: A number from 1 (inclusive) to MAX (exclusive)
 # X_n+1 = (a*X_n + c) % m
 rand:
+    #loading equation parameters
     la t0, a
     lw t0, 0(t0)
 
@@ -175,11 +271,23 @@ rand:
     
     la t2, m
     lw t2, 0(t2)
-    
-    mul a1, a1, t0
-    add a1, a1, t1
-    remu a1, a1, t2
 
-    remu a0, a1, a0
+    #argument passed to function
+    mv t3, a0
+
+    #getting random seed using time syscall (seed stored in a0)
+    li a7, 30
+    ecall
+    
+    mul a0, a0, t0
+    add a0, a0, t1
+    remu a0, a0, t2
+
+    remu a0, a0, t3
 	
-	ret
+    bne a0, zero, rand_end
+
+	li a0, 1
+
+    rand_end:
+        jr ra
