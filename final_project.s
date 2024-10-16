@@ -4,19 +4,22 @@ character:  .byte 0,0
 box:        .byte 0,0
 target:     .byte 0,0
 
-#for random:
+#for random: (DO NOT CHANGE)
 a: .word 6
 c: .word 1
 m: .word 25
 
 space_char: .byte ' '
+
 wall_char: .byte 'X'
+empty_square_char: .byte '.'
 player_char: .byte 'p'
 box_char: .byte 'b'
 target_char: .byte 't'
 box_on_target_char: .byte '*'
 
 newline: .string "\n"
+clash: .string "location clash\n"
 
 .text
 .globl _start
@@ -96,6 +99,12 @@ gen_locations:
         sb a0, 1(t0)
 
     gen_locations_box:
+        la a0, clash
+        li a7, 4
+        ecall
+
+
+
         la a0, gridsize
         lb a0, 0(a0)
         addi a0, a0, -1 #max row rank (ranks start from 0)
@@ -115,13 +124,19 @@ gen_locations:
         #checking if box location is equal to character location and fixing if so...
         la a0, box
         la a1, character
-        jal check_location_equal
+        jal check_equal_locations
         beq a0, zero, gen_locations_box
 
         #TODO: make sure box does not spawn in a corner (because then the player won't be able to move it)
 
 
     gen_locations_target:
+        la a0, clash
+        li a7, 4
+        ecall
+
+
+
         la a0, gridsize
         lb a0, 0(a0)
         addi a0, a0, -1 #max row rank (ranks start from 0)
@@ -141,34 +156,15 @@ gen_locations:
         #checking if target location is equal to the box location or character location and fixing if so...
         la a0, target
         la a1, character
-        jal check_location_equal
+        jal check_equal_locations
         beq a0, zero, gen_locations_target
         la a0, target
         la a1, box
-        jal check_location_equal
+        jal check_equal_locations
         beq a0, zero, gen_locations_target
 
     jr ra
 
-
-#arguments a0 and a1 are the addresses of the locations in memory
-#sets a0 to 0 if locations are equal and to 1 if they are not
-check_location_equal:
-    lb t0, 0(a0)
-    lb t1, 1(a0)
-    lb t2, 0(a1)
-    lb t3, 1(a1)
-
-    bne t0, t2, check_location_equal_1
-    bne t1, t3, check_location_equal_1
-
-    check_location_equal_0:
-        li a0, 0
-        jr ra
-
-    check_location_equal_1:
-        li a0, 1
-        jr ra
 
 
 #Arguments: N/A
@@ -176,6 +172,12 @@ printBoard:
     #store ra using stack
     addi sp, sp, -4
     sw ra, 0(sp)
+
+    #storing original values of s0, s1 on the stack (because they are callee-saved)
+    addi sp, sp, -4
+    sw s0, 0(sp)
+    addi sp, sp, -4
+    sw s1, 0(sp)
 
     #nested for loop
     li s0, -1 #row counter (must start at -1 since we allow row count to potentially be 0)
@@ -201,34 +203,63 @@ printBoard:
 
             beq s1, t0, printBoard_outerloop
 
-            #printing chars
-            li a7, 11
+            #checking what type of object to print (wall, empty_square, player, box, target, box_on_target)
 
-            #wall
-            la a0, wall_char
-            lb a0, 0(a0)
-            ecall
 
-            #3 space chars (to make look symmetrical)
-            la a0, space_char
-            lb a0, 0(a0)
-            ecall
-            ecall
-            ecall
+            printBoard_innerloop_wall:
+                la a0, wall_char
+                j printBoard_innerloop_end
+            printBoard_innerloop_empty_square:
+                la a0, empty_square_char
+                j printBoard_innerloop_end
+            printBoard_innerloop_player:
+                la a0, player_char
+                j printBoard_innerloop_end
+            printBoard_innerloop_box:
+                la a0, box_char
+                j printBoard_innerloop_end
+            printBoard_innerloop_target:
+                la a0, target_char
+                j printBoard_innerloop_end
+            printBoard_innerloop_box_on_target:
+                la a0, box_on_target_char
+                j printBoard_innerloop_end
+
             
-            #increment column counter
-            addi s1, s1, 1
-
-            j printBoard_innerloop
+            printBoard_innerloop_end:
+                jal print_object
+                #increment column counter
+                addi s1, s1, 1
+                j printBoard_innerloop
 
     printBoard_end:
         jal printNewline
+        
+        #retrieving original values of s0, s1 on the stack (because they are callee-saved)
+        #also retrieving original value of ra
+        lw s1, 0(sp)
+        lw s0, 4(sp)
+        lw ra, 8(sp)
 
-        lw ra, 0(sp)
-        addi sp, sp, 4
+        #popping stack
+        addi sp, sp, 12
         jr ra
 
+#argument:
+#a0 contains the address of the object to print
+print_object:
+    li a7, 11
+    lb a0, 0(a0)
+    ecall
 
+    #3 space chars (to make look symmetrical)
+    la a0, space_char
+    lb a0, 0(a0)
+    ecall
+    ecall
+    ecall
+
+    jr ra
 
 
 
@@ -290,4 +321,143 @@ rand:
 	li a0, 1
 
     rand_end:
+        jr ra
+
+
+
+
+
+
+#
+#<START> CHECK EQUAL FUNCTIONS
+#
+
+#arguments:
+#a0 and a1 are the addresses of the locations in memory
+#sets a0 to 0 if locations are equal and to 1 if they are not
+check_equal_locations:
+    lb t0, 0(a0)
+    lb t1, 1(a0)
+    lb t2, 0(a1)
+    lb t3, 1(a1)
+
+    bne t0, t2, check_equal_locations_1
+    bne t1, t3, check_equal_locations_1
+
+    check_equal_locations_0:
+        li a0, 0
+        jr ra
+
+    check_equal_locations_1:
+        li a0, 1
+        jr ra
+
+#arguments:
+#a0 is address
+#a1 and a2 are coordinates (row, column)
+#sets a0 to 0 if locations are equal and to 1 if they are not
+check_equal_location_coordinate:
+    lb t0, 0(a0)
+    lb t1, 1(a0)
+    mv t2, a1
+    mv t3, a2
+
+    bne t0, t2, check_equal_location_coordinate_1
+    bne t1, t3, check_equal_location_coordinate_1
+
+    check_equal_location_coordinate_0:
+        li a0, 0
+        jr ra
+
+    check_equal_location_coordinate_1:
+        li a0, 1
+        jr ra
+
+#arguments:
+#a0 and a1 are the first set of coordinates (row, column)
+#a2 and a3 are the second set of coordinates (row, column)
+#sets a0 to 0 if locations are equal and to 1 if they are not
+check_equal_coordinates:
+    mv t0, a0
+    mv t1, a1
+    mv t2, a2
+    mv t3, a3
+
+    bne t0, t2, check_equal_coordinates_1
+    bne t1, t3, check_equal_coordinates_1
+
+    check_equal_coordinates_0:
+        li a0, 0
+        jr ra
+
+    check_equal_coordinates_1:
+        li a0, 1
+        jr ra
+
+#
+#<END>
+#
+
+#arguments:
+#a0 and a1 are the set of coordinates (row, column)
+#sets a0 to the appropriate address of the char byte
+get_object_at_coordinate:
+    #storing ra on stack
+    addi sp, sp, -4
+    sw ra, 0(sp)
+    #storing original values of s0, s1 on the stack (because they are callee-saved)
+    addi sp, sp, -4
+    sw s0, 0(sp)
+    addi sp, sp, -4
+    sw s1, 0(sp)
+
+    #order is important
+    mv a2, a1
+    mv a1, a0
+
+    #note: s0 will be used to store address of the char (because after the jal call, a0 will be overwritten)
+
+    #here we begin
+    ################## 1
+    la a0, wall_char
+    mv s0, a0
+    jal check_equal_location_coordinate
+    beq a0, zero, get_object_at_coordinate_end
+    ################## 2
+    la a0, empty_square_char
+    mv s0, a0
+    jal check_equal_location_coordinate
+    beq a0, zero, get_object_at_coordinate_end
+    ################## 3
+    la a0, player_char
+    mv s0, a0
+    jal check_equal_location_coordinate
+    beq a0, zero, get_object_at_coordinate_end
+    ################## 4
+    la a0, box_char
+    mv s0, a0
+    jal check_equal_location_coordinate
+    beq a0, zero, get_object_at_coordinate_end
+    ################## 5
+    la a0, target_char
+    mv s0, a0
+    jal check_equal_location_coordinate
+    beq a0, zero, get_object_at_coordinate_end
+    ################## 6
+    la a0, box_on_target_char
+    mv s0, a0
+    jal check_equal_location_coordinate
+    beq a0, zero, get_object_at_coordinate_end
+
+    get_object_at_coordinate_end:
+        mv a0, s0
+        #retrieving original values of s0, s1 on the stack (because they are callee-saved)
+        #also retrieving original value of ra
+        lw s1, 0(sp)
+        lw s0, 4(sp)
+        lw ra, 8(sp)
+
+        #popping stack
+        addi sp, sp, 12
+
         jr ra
