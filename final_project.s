@@ -4,6 +4,7 @@ character:  .byte 0,0
 box:        .byte 0,0
 target:     .byte 0,0
 
+space_char: .byte ' '
 wall_char: .byte 'w'
 player_char: .byte 'p'
 box_char: .byte 'b'
@@ -63,6 +64,8 @@ _start:
 
     jal printBoard
 
+    jal exit
+
 
 exit:
     li a7, 10
@@ -108,36 +111,49 @@ printBoard:
     lb s0, 0(t0) #rows
     lb s1, 1(t0) #columns
 
-    #nested for loop
-    li t0, 0 #row counter
-    li t1, 0 #column counter
+    #load chars
+    la s4, wall_char
+    lb s4, 0(s4)
 
-    #load wall char
-    la s2, wall_char
-    lb s2, 0(s2)
+    la s5, space_char
+    lb s5, 0(s5)
+
+    #nested for loop
+    li s2, -1 #row counter (must start at -1 since we allow row count to potentially be 0)
+    li s3, 0 #column counter
 
     printBoard_outerloop:
-        beq t0, s0, printBoard_end
+        addi s2, s2, 1
+        beq s2, s0, printBoard_end
 
-        addi t0, t0, 1
-        jal printNewline
+        li a0, 2
+        jal print_multiple_newlines
 
+        li s3, 0 #resetting column counter
         printBoard_innerloop:
-            beq t1, s1, printBoard_outerloop
+            beq s3, s1, printBoard_outerloop
 
-            mv a0, s2
+            #wall
+            mv a0, s4
             li a7, 11
+            ecall
+
+            #3 space chars (to make look symmetrical)
+            mv a0, s5
+            li a7, 11
+            ecall
+            ecall
             ecall
             
             #increment column counter
-            addi t1, t1, 1
+            addi s3, s3, 1
 
             j printBoard_innerloop
 
     printBoard_end:
         jal printNewline
 
-        mv ra, s11
+        lw ra, 0(s11)
         jr ra
 
 
@@ -150,6 +166,25 @@ printNewline:
     li a7, 4
     ecall
     jr ra
+
+# argument: a0 (number of newlines), assumed to be > 0
+print_multiple_newlines:
+    li t0, 0 #counter
+    mv t1, ra
+    mv t2, a0
+
+    print_multiple_newlines_loop:
+        jal printNewline
+        
+        addi t0, t0, 1
+        beq t0, t2, print_multiple_newlines_end
+        
+        j print_multiple_newlines_loop
+
+    print_multiple_newlines_end:
+        mv ra, t1
+        jr ra
+
 
 # Arguments: an integer MAX in a0
 # Return: A number from 0 (inclusive) to MAX (exclusive)
