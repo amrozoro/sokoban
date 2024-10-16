@@ -4,12 +4,18 @@ character:  .byte 0,0
 box:        .byte 0,0
 target:     .byte 0,0
 
+#for random:
+a: .word 6
+c: .word 1
+m: .word 25
+start_seed: .word 10
+
 space_char: .byte ' '
-wall_char: .byte 'w'
+wall_char: .byte 'X'
 player_char: .byte 'p'
 box_char: .byte 'b'
 target_char: .byte 't'
-box_on_target_char: .byte 'X'
+box_on_target_char: .byte '*'
 
 newline: .string "\n"
 loopCompletedString: .string "randomLoop has completed"
@@ -52,14 +58,6 @@ _start:
     # TODO: That's the base game! Now, pick a pair of enhancements and
     # consider how to implement them.
 
-
-
-
-    # li s0, 0 #to exit randomLoop
-    # jal randomLoop
-    # la a0, loopCompletedString
-    # li a7, 4
-    # ecall
     
 
     jal printBoard
@@ -73,28 +71,8 @@ exit:
     
     
 # --- HELPER FUNCTIONS ---
-# Feel free to use, modify, or add to them however you see fit.
 
-randomLoop:
-    mv s11, ra
 
-	randomLoopBody:
-        li a7, 5
-        ecall
-
-    	beq a0, s0, randomLoopEnd
-
-		jal notrand
-		li a7, 1
-		ecall
-
-        jal printNewline
-
-		j randomLoopBody
-    	
-    randomLoopEnd:
-        lw ra, 0(s1)
-        jr ra
 
 
 #Arguments: N/A
@@ -186,11 +164,22 @@ print_multiple_newlines:
 
 # Arguments: an integer MAX in a0
 # Return: A number from 0 (inclusive) to MAX (exclusive)
-notrand:
-    mv t0, a0
-    li a7, 30
-    ecall             # time syscall (returns milliseconds)
-    remu a0, a0, t0   # modulus on bottom bits 
-    li a7, 32
-    ecall             # sleeping to try to generate a different number
-    jr ra
+# seed passed in as a1
+# X_n+1 = (a*X_n + c) % m
+rand:
+    la t0, a
+    lw t0, 0(t0)
+
+    la t1, c
+    lw t1, 0(t1)
+    
+    la t2, m
+    lw t2, 0(t2)
+    
+    mul a1, a1, t0
+    add a1, a1, t1
+    remu a1, a1, t2
+
+    remu a0, a1, a0
+	
+	ret
