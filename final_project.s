@@ -64,7 +64,7 @@ _start:
 
     jal printBoard
 
-    jal exit
+    j exit
 
 
 exit:
@@ -99,61 +99,59 @@ randomLoop:
 
 #Arguments: N/A
 printBoard:
-    #store ra using sbrk
-    li a0, 4
-    li a7, 9
-    ecall
-    mv s11, a0 #moving address to a store register (s11, the last store register)
-    sw ra, 0(s11)
-
-    #load grid dimensions
-    la t0, gridsize
-    lb s0, 0(t0) #rows
-    lb s1, 1(t0) #columns
-
-    #load chars
-    la s4, wall_char
-    lb s4, 0(s4)
-
-    la s5, space_char
-    lb s5, 0(s5)
+    #store ra using stack
+    addi sp, sp, -4
+    sw ra, 0(sp)
 
     #nested for loop
-    li s2, -1 #row counter (must start at -1 since we allow row count to potentially be 0)
-    li s3, 0 #column counter
+    li s0, -1 #row counter (must start at -1 since we allow row count to potentially be 0)
+    li s1, 0 #column counter
 
     printBoard_outerloop:
-        addi s2, s2, 1
-        beq s2, s0, printBoard_end
+        addi s0, s0, 1
+
+        #load grid width
+        la t0, gridsize
+        lb t0, 0(t0) #rows
+
+        beq s0, t0, printBoard_end
 
         li a0, 2
         jal print_multiple_newlines
 
-        li s3, 0 #resetting column counter
+        li s1, 0 #resetting column counter
         printBoard_innerloop:
-            beq s3, s1, printBoard_outerloop
+            #load grid length
+            la t0, gridsize
+            lb t0, 1(t0) #columns
+
+            beq s1, t0, printBoard_outerloop
+
+            #printing chars
+            li a7, 11
 
             #wall
-            mv a0, s4
-            li a7, 11
+            la a0, wall_char
+            lb a0, 0(a0)
             ecall
 
             #3 space chars (to make look symmetrical)
-            mv a0, s5
-            li a7, 11
+            la a0, space_char
+            lb a0, 0(a0)
             ecall
             ecall
             ecall
             
             #increment column counter
-            addi s3, s3, 1
+            addi s1, s1, 1
 
             j printBoard_innerloop
 
     printBoard_end:
         jal printNewline
 
-        lw ra, 0(s11)
+        lw ra, 0(sp)
+        addi sp, sp, 4
         jr ra
 
 
