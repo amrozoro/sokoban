@@ -11,8 +11,8 @@ m: .word 25
 
 space_char: .byte ' '
 
-wall_char: .byte 'X'
-empty_square_char: .byte '.'
+wall_char: .byte '.' #. or X
+empty_square_char: .byte '_' #. or _
 player_char: .byte 'p'
 box_char: .byte 'b'
 target_char: .byte 't'
@@ -80,6 +80,10 @@ exit:
 # --- HELPER FUNCTIONS ---
 
 gen_locations:
+    #storing ra on stack
+    addi sp, sp, -4
+    sw ra, 0(sp)
+
     #locations cannot be on boundaries
     gen_locations_character:
         la a0, gridsize
@@ -131,6 +135,7 @@ gen_locations:
 
 
     gen_locations_target:
+        #TODO
         la a0, clash
         li a7, 4
         ecall
@@ -163,6 +168,8 @@ gen_locations:
         jal check_equal_locations
         beq a0, zero, gen_locations_target
 
+    lw ra, 0(sp)
+    addi sp, sp, 4
     jr ra
 
 
@@ -204,33 +211,14 @@ printBoard:
             beq s1, t0, printBoard_outerloop
 
             #checking what type of object to print (wall, empty_square, player, box, target, box_on_target)
-
-
-            printBoard_innerloop_wall:
-                la a0, wall_char
-                j printBoard_innerloop_end
-            printBoard_innerloop_empty_square:
-                la a0, empty_square_char
-                j printBoard_innerloop_end
-            printBoard_innerloop_player:
-                la a0, player_char
-                j printBoard_innerloop_end
-            printBoard_innerloop_box:
-                la a0, box_char
-                j printBoard_innerloop_end
-            printBoard_innerloop_target:
-                la a0, target_char
-                j printBoard_innerloop_end
-            printBoard_innerloop_box_on_target:
-                la a0, box_on_target_char
-                j printBoard_innerloop_end
-
+            mv a0, s0
+            mv a1, s1
+            jal get_object_at_coordinate
             
-            printBoard_innerloop_end:
-                jal print_object
-                #increment column counter
-                addi s1, s1, 1
-                j printBoard_innerloop
+            jal print_object
+            #increment column counter
+            addi s1, s1, 1
+            j printBoard_innerloop
 
     printBoard_end:
         jal printNewline
@@ -309,6 +297,8 @@ rand:
     #getting random seed using time syscall (seed stored in a0)
     li a7, 30
     ecall
+
+    remu a0, a0, t2
     
     mul a0, a0, t0
     add a0, a0, t1
@@ -400,7 +390,7 @@ check_equal_coordinates:
 
 #arguments:
 #a0 and a1 are the set of coordinates (row, column)
-#sets a0 to the appropriate address of the char byte
+#sets a0 to the appropriate address of the char byte (labels ending in "_char")
 get_object_at_coordinate:
     #storing ra on stack
     addi sp, sp, -4
@@ -419,35 +409,23 @@ get_object_at_coordinate:
 
     #here we begin
     ################## 1
-    la a0, wall_char
-    mv s0, a0
+    la a0, character
+    la s0, player_char
     jal check_equal_location_coordinate
     beq a0, zero, get_object_at_coordinate_end
     ################## 2
-    la a0, empty_square_char
-    mv s0, a0
+    la a0, box
+    la s0, box_char
     jal check_equal_location_coordinate
     beq a0, zero, get_object_at_coordinate_end
     ################## 3
-    la a0, player_char
-    mv s0, a0
+    la a0, target
+    la s0, target_char
     jal check_equal_location_coordinate
     beq a0, zero, get_object_at_coordinate_end
     ################## 4
-    la a0, box_char
-    mv s0, a0
-    jal check_equal_location_coordinate
-    beq a0, zero, get_object_at_coordinate_end
-    ################## 5
-    la a0, target_char
-    mv s0, a0
-    jal check_equal_location_coordinate
-    beq a0, zero, get_object_at_coordinate_end
-    ################## 6
-    la a0, box_on_target_char
-    mv s0, a0
-    jal check_equal_location_coordinate
-    beq a0, zero, get_object_at_coordinate_end
+    #TODO: change this but for now, we assume everything else is a wall
+    la s0, wall_char
 
     get_object_at_coordinate_end:
         mv a0, s0
