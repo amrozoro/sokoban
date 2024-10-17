@@ -1,26 +1,29 @@
 .data
-gridsize:   .byte 8,8 #not a hard-coded value, format is (row, column)
-player:  .byte 0,0
-box:        .byte 0,0
-target:     .byte 0,0
-
-#player, box, target
-player_initial: .byte 0,0
-box_initial: .byte 0,0
-target_initial: .byte 0,0
-
 #for random: (DO NOT CHANGE)
 a: .word 6
 c: .word 1
 m: .word 25
 seed: .word 100 #will be manipulated as the game progresses
 
+sleep_factor: .word 250 #how much time to sleep before printing board again (in ms)
+
+#board stuff
+gridsize:   .byte 8,8 #not a hard-coded value, format is (row, column)
+player:  .byte 0,0
+box:        .byte 0,0
+target:     .byte 0,0
+
+#player, box, target initial locations
+player_initial: .byte 0,0
+box_initial: .byte 0,0
+target_initial: .byte 0,0
+
 space_char: .byte ' '
 
 wall_char: .byte 'X' #. or X
-empty_square_char: .byte '_' #. or _
+empty_square_char: .byte '.' #. or _
 player_char: .byte 'P'
-box_char: .byte 'b'
+box_char: .byte 'B'
 target_char: .byte '$' #t or * or $
 box_on_target_char: .byte '*'
 
@@ -32,7 +35,7 @@ allow_boundary_spawn: .byte 1 #0 for true, 1 for false
 input_controls: .byte 0, 1, 2, 3, -1, -2
 
 
-
+#strings
 newline: .string "\n"
 prompt: .string "> "
 clash: .string "location clash\n"
@@ -70,18 +73,17 @@ _start:
     j exit
 
 game:
-    game_init:
-        #storing on stack
-        addi sp, sp, -4
-        sw ra, 0(sp)
-        addi sp, sp, -4
-        sw s0, 0(sp)
-        addi sp, sp, -4
-        sw s1, 0(sp)
+    #storing on stack
+    addi sp, sp, -4
+    sw ra, 0(sp)
+    addi sp, sp, -4
+    sw s0, 0(sp)
+    addi sp, sp, -4
+    sw s1, 0(sp)
 
-        jal store_initial_positions
+    jal store_initial_positions
 
-        j game_loop
+    j game_loop
     
     game_loop:
         la a0, prompt
@@ -89,10 +91,9 @@ game:
         ecall
 
         #input
-        li a7, 1
+        li a7, 5
         ecall
 
-        jal move
         #input can be (for default input controls) 0(north), 1(east), 2(south), 3(west), -1(restart to original position), -2(exit)...anything else and we print a warning
         la t0, input_controls
         
@@ -100,45 +101,45 @@ game:
 
         li s0, -1
         li s1, 0
-        lb t0, 0(t0)
-        beq a0, t0, m
+        lb t1, 0(t0)
+        beq a0, t1, try_move
 
         li s0, 0
         li s1, 1
-        lb t0, 1(t0)
-        beq a0, t0, m
+        lb t1, 1(t0)
+        beq a0, t1, try_move
         
         li s0, 1
         li s1, 0
-        lb t0, 2(t0)
-        beq a0, t0, m
+        lb t1, 2(t0)
+        beq a0, t1, try_move
         
         li s0, 0
         li s1, -1
-        lb t0, 3(t0)
-        beq a0, t0, m
+        lb t1, 3(t0)
+        beq a0, t1, try_move
         
-        lb t0, 4(t0)
-        beq a0, t0, restart_game
+        lb t1, 4(t0)
+        beq a0, t1, restart_game
         
-        lb t0, 5(t0)
-        beq a0, t0, game_end
+        lb t1, 5(t0)
+        beq a0, t1, game_end
 
         #any other input gets redirected to warning
         jal print_invalid_input_warning
         j game_loop
 
-        m:
+        try_move:
+            #offsets
             mv a0, s0
             mv a1, s1
 
             jal move
             j game_loop
-
-        
-        
+ 
     restart_game:
-        #TODO
+        jal load_initial_positions
+        j game_loop
 
 
     game_end:
@@ -174,16 +175,16 @@ move:
 
     #player's coordinates
     la t0, player
-    lb t1, 0(player) #row
-    lb t2, 1(player) #column
+    lb t1, 0(t0) #row
+    lb t2, 1(t0) #column
     
     #saving offsets
     mv s2, a0
     mv s3, s1
 
     #dest coordinates
-    addi s0, t1, a0
-    addi s1, t2, a1
+    add s0, t1, a0
+    add s1, t2, a1
 
     #find what block is at dest
     mv a0, s0
@@ -194,8 +195,10 @@ move:
     la t0, wall_char
     beq a0, t0, dest_wall
 
-    #check if the object is an empty square or target square (which is technically an empty square and is regarded as such)
+    #check if the object is an empty square or target square (which is technically an empty square and will be regarded as such)
     la t0, empty_square_char
+    beq a0, t0, dest_empty_square
+    la t0, target_char
     beq a0, t0, dest_empty_square
 
     #check if the object is a box
@@ -212,7 +215,17 @@ move:
         la a0, player
         mv a1, s0
         mv a2, s1
-        update_object_location
+        jal update_object_location
+
+        #wait a little then print board
+        la a0, sleep_factor
+        lw a0, 0(a0)
+        li a7, 32
+        ecall
+
+        #print updated board
+        jal printBoard
+
         j move_end
     
     dest_box:
@@ -228,17 +241,26 @@ move:
         la a0, player
         mv a1, s0
         mv a2, s1
-        update_object_location
+        jal update_object_location
         
         la a0, box
         add a1, s0, s2
         add a2, s1, s3
-        update_object_location
+        jal update_object_location
+
+        #wait a little then print board
+        la a0, sleep_factor
+        lw a0, 0(a0)
+        li a7, 32
+        ecall
         
+        #print updated board
+        jal printBoard
+
         j move_end
 
         no_room:
-            print_illegal_move_warning
+            jal print_illegal_move_warning
             j move_end
         
 
@@ -275,23 +297,23 @@ store_initial_positions:
     la t0, player_initial
     la t1, player
     lb t2, 0(t1)
-    sb t2, 0(player_initial)
+    sb t2, 0(t0)
     lb t2, 1(t1)
-    sb t2, 1(player_initial)
+    sb t2, 1(t0)
     
     la t0, box_initial
     la t1, box
     lb t2, 0(t1)
-    sb t2, 0(box_initial)
+    sb t2, 0(t0)
     lb t2, 1(t1)
-    sb t2, 1(box_initial)
+    sb t2, 1(t0)
     
     la t0, target_initial
     la t1, target
     lb t2, 0(t1)
-    sb t2, 0(target_initial)
+    sb t2, 0(t0)
     lb t2, 1(t1)
-    sb t2, 1(target_initial)
+    sb t2, 1(t0)
 
     jr ra
 
@@ -299,23 +321,23 @@ load_initial_positions:
     la t0, player_initial
     la t1, player
     lb t2, 0(t0)
-    sb t2, 0(player)
+    sb t2, 0(t1)
     lb t2, 1(t0)
-    sb t2, 1(player)
+    sb t2, 1(t1)
     
     la t0, box_initial
     la t1, box
     lb t2, 0(t0)
-    sb t2, 0(box)
+    sb t2, 0(t1)
     lb t2, 1(t0)
-    sb t2, 1(box)
+    sb t2, 1(t1)
     
     la t0, target_initial
     la t1, target
     lb t2, 0(t0)
-    sb t2, 0(target)
+    sb t2, 0(t1)
     lb t2, 1(t0)
-    sb t2, 1(target)
+    sb t2, 1(t1)
 
     jr ra
 
@@ -492,12 +514,10 @@ printBoard:
     addi sp, sp, -4
     sw s3, 0(sp)
 
-    #load grid row count
-    la s0, gridsize
-    lb s0, 0(s0) #rows
-    #load grid column count
-    la s1, gridsize
-    lb s1, 0(s1) #columns
+    #load grid row and column count
+    la t0, gridsize
+    lb s0, 0(t0) #rows
+    lb s1, 1(t0) #columns
 
 
     #nested for loop
