@@ -42,6 +42,7 @@ clash: .string "location clash\n"
 invalid_input_string: .string "Invalid input...try again\n"
 illegal_move_string: .string "Cannot perform that move...try again\n" #illegal moves are ones like trying to go through a wall or pushing a box with a wall behind it
 restart_notice_string: .string "*************************\n*****RESTARTING GAME*****\n*************************"
+congrats_message_string: .string "Congrats! You have completed the game!\n"
 
 .text
 .globl _start
@@ -241,6 +242,13 @@ move:
         add a2, s1, s3
         jal update_object_location
 
+
+        #check if box is on target
+        la a0, box
+        la a1, target
+        jal check_equal_locations
+        beq a0, zero, completed
+
         #wait a little then print board
         la a0, sleep_factor
         lw a0, 0(a0)
@@ -255,6 +263,11 @@ move:
         no_room:
             jal print_illegal_move_warning
             j move_end
+
+        completed:
+            jal print_congrats_message
+            li a7, 10
+            ecall
         
 
     move_end:
@@ -656,6 +669,11 @@ print_illegal_move_warning:
 
 print_restart_notice:
     la a0, restart_notice_string
+    li a7, 4
+    ecall
+    jr ra
+print_congrats_message:
+    la a0, congrats_message_string
     li a7, 4
     ecall
     jr ra
