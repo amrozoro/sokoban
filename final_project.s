@@ -12,11 +12,11 @@ seed: .word 100 #will be manipulated as the game progresses
 
 space_char: .byte ' '
 
-wall_char: .byte '.' #. or X
+wall_char: .byte 'X' #. or X
 empty_square_char: .byte '_' #. or _
-player_char: .byte 'p'
+player_char: .byte 'P'
 box_char: .byte 'b'
-target_char: .byte 't'
+target_char: .byte '$' #t or * or $
 box_on_target_char: .byte '*'
 
 #settings
@@ -461,11 +461,16 @@ get_object_at_coordinate:
     jal check_equal_location_coordinate
     beq a0, zero, get_object_at_coordinate_end
     ################## 4
-    #TODO: change this but for now, we assume everything else is a wall
-    
-    #wall only at boundaries (first and last rows and columns)
-    
+    #wall only at boundaries (first and last rows and columns)    
     la s0, wall_char
+
+
+    jal is_boundary
+    beq a0, zero, get_object_at_coordinate_end
+    ################## 5
+    #TODO: everything else is an empty square
+    la s0, empty_square_char
+
 
     get_object_at_coordinate_end:
         mv a0, s0
@@ -474,8 +479,36 @@ get_object_at_coordinate:
         lw s1, 0(sp)
         lw s0, 4(sp)
         lw ra, 8(sp)
-
         #popping stack
         addi sp, sp, 12
 
+        jr ra
+
+#arguments:
+#a1 and a2 are the set of coordinates (row, column)
+#sets a0 to 0 if true and 1 if false
+is_boundary:
+    la t0, gridsize
+    lb t0, 0(t0)
+    addi t0, t0, -1 #max row
+
+    la t1, gridsize
+    lb t1, 1(t1)
+    addi t1, t1, -1 #max column
+
+    #check if a1 is 0 or max row (if it is, we jump straight to the end)
+    beq a1, zero, is_boundary_0
+    beq a1, t0, is_boundary_0
+    #check if a2 is 0 or max column (if it is, we jump straight to the end)
+    beq a2, zero, is_boundary_0
+    beq a2, t1, is_boundary_0
+
+    j is_boundary_1
+
+    is_boundary_0:
+        li a0, 0
+        jr ra
+
+    is_boundary_1:
+        li a0, 1
         jr ra
