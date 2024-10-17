@@ -4,6 +4,11 @@ player:  .byte 0,0
 box:        .byte 0,0
 target:     .byte 0,0
 
+#player, box, target
+player_initial: .byte 0,0
+box_initial: .byte 0,0
+target_initial: .byte 0,0
+
 #for random: (DO NOT CHANGE)
 a: .word 6
 c: .word 1
@@ -25,44 +30,26 @@ allow_boundary_spawn: .byte 1 #0 for true, 1 for false
 
 
 newline: .string "\n"
+prompt: .string "> "
 clash: .string "location clash\n"
 
 .text
 .globl _start
 
 _start:
-    # TODO: Generate locations for the player, box, and target. Static
-    # locations in memory have been provided for the (x, y) coordinates 
-    # of each of these elements.
-    #
-    # There is a notrand function that you can use to start with. It's 
-    # really not very good; you will replace it with your own rand function
-    # later. Regardless of the source of your "random" locations, make 
-    # sure that none of the items are on top of each other and that the 
-    # board is solvable.
-
     jal gen_locations
+    jal printBoard
+    #todo: print welcome string
 
-
-
-    
-
-   
-    # TODO: Now, print the gameboard. Select symbols to represent the walls,
-    # player, box, and target. Write a function that uses the location of
-    # the various elements (in memory) to construct a gameboard and that 
-    # prints that board one player at a time.
-    # HINT: You may wish to construct the string that represents the board
-    # and then print that string with a single syscall. If you do this, 
-    # consider whether you want to place this string in static memory or 
-    # on the stack. 
 
     # TODO: Enter a loop and wait for user input. Whenever user input is
     # received, update the gameboard state with the new location of the 
     # player (and if applicable, box and target). Print a message if the 
     # input received is invalid or if it results in no change to the game 
-    # state. Otherwise, print the updated game state. 
-    #
+    # state. Otherwise, print the updated game state.
+
+    jal game
+
     # You will also need to restart the game if the user requests it and 
     # indicate when the box is located in the same position as the target.
     # For the former, it may be useful for this loop to exist in a function,
@@ -73,10 +60,90 @@ _start:
 
     
 
-    jal printBoard
 
     j exit
 
+game:
+    game_init:
+        #storing on stack
+        addi sp, sp, -4
+        sw ra, 0(sp)
+        addi sp, sp, -4
+        sw s0, 0(sp)
+        addi sp, sp, -4
+        sw s1, 0(sp)
+
+        jal store_initial_positions
+
+        j game_loop
+    
+    game_loop:
+        la a0, prompt
+        li a7, 4
+        ecall
+
+        #input
+        li a7, 1
+        ecall
+
+        #input can be 0(north), 1(east), 2(south), 3(west), -1(restart to original position), -2(exit)
+        
+
+
+    game_end:
+        lw s1, 0(sp)
+        lw s0, 4(sp)
+        lw ra, 8(sp)
+        addi sp, sp, 12
+        jr ra
+
+store_initial_positions:
+    la t0, player_initial
+    la t1, player
+    lb t2, 0(t1)
+    sb t2, 0(player_initial)
+    lb t2, 1(t1)
+    sb t2, 1(player_initial)
+    
+    la t0, box_initial
+    la t1, box
+    lb t2, 0(t1)
+    sb t2, 0(box_initial)
+    lb t2, 1(t1)
+    sb t2, 1(box_initial)
+    
+    la t0, target_initial
+    la t1, target
+    lb t2, 0(t1)
+    sb t2, 0(target_initial)
+    lb t2, 1(t1)
+    sb t2, 1(target_initial)
+
+    jr ra
+
+load_initial_positions:
+    la t0, player_initial
+    la t1, player
+    lb t2, 0(t0)
+    sb t2, 0(player)
+    lb t2, 1(t0)
+    sb t2, 1(player)
+    
+    la t0, box_initial
+    la t1, box
+    lb t2, 0(t0)
+    sb t2, 0(box)
+    lb t2, 1(t0)
+    sb t2, 1(box)
+    
+    la t0, target_initial
+    la t1, target
+    lb t2, 0(t0)
+    sb t2, 0(target)
+    lb t2, 1(t0)
+    sb t2, 1(target)
+
+    jr ra
 
 exit:
     li a7, 10
