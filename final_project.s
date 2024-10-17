@@ -41,21 +41,15 @@ prompt: .string "> "
 clash: .string "location clash\n"
 invalid_input_string: .string "Invalid input...try again\n"
 illegal_move_string: .string "Cannot perform that move...try again\n" #illegal moves are ones like trying to go through a wall or pushing a box with a wall behind it
+restart_notice_string: .string "*************************\n*****RESTARTING GAME*****\n*************************"
 
 .text
 .globl _start
 
 _start:
+    #todo: print welcome string
     jal gen_locations
     jal printBoard
-    #todo: print welcome string
-
-
-    # TODO: Enter a loop and wait for user input. Whenever user input is
-    # received, update the gameboard state with the new location of the 
-    # player (and if applicable, box and target). Print a message if the 
-    # input received is invalid or if it results in no change to the game 
-    # state. Otherwise, print the updated game state.
 
     jal game
 
@@ -66,9 +60,6 @@ _start:
 
     # TODO: That's the base game! Now, pick a pair of enhancements and
     # consider how to implement them.
-
-    
-
 
     j exit
 
@@ -138,7 +129,9 @@ game:
             j game_loop
  
     restart_game:
+        jal print_restart_notice
         jal load_initial_positions
+        jal printBoard
         j game_loop
 
 
@@ -349,36 +342,20 @@ gen_locations:
     sw s0, 4(sp)
     sw s1, 0(sp)
 
-
+    #todo remove
     #locations may be on boundaries
     la t0, allow_boundary_spawn
     lb t0, 0(t0)
 
-    #row
+    #max row
     la s0, gridsize
     lb s0, 0(s0)
     sub s0, s0, t0
-    #column
+    #max column
     la s1, gridsize
     lb s1, 1(s1)
     sub s1, s1, t0
     
-
-    gen_locations_player:
-        mv a0, s0
-        jal rand
-
-        #updating player x (row) coordinate
-        la t0, player
-        sb a0, 0(t0)
-
-        mv a0, s1
-        jal rand
-        
-        #updating player y (column) coordinate
-        la t0, player
-        sb a0, 1(t0)
-
     gen_locations_box:
         #TODO remove
         la a0, clash
@@ -400,13 +377,39 @@ gen_locations:
         la t0, box
         sb a0, 1(t0)
 
-        #checking if box location is equal to player location and fixing if so...
-        la a0, box
-        la a1, player
-        jal check_equal_locations
+        #making sure box does not spawn in a corner (because then the player won't be able to move it)
+        la t0, box
+        lb a0, 0(t0)
+        lb a1, 1(t0)
+        jal is_corner
+
+        li a7, 1
+        ecall
+
         beq a0, zero, gen_locations_box
 
-        #TODO: make sure box does not spawn in a corner (because then the player won't be able to move it)
+
+
+    gen_locations_player:
+        mv a0, s0
+        jal rand
+
+        #updating player x (row) coordinate
+        la t0, player
+        sb a0, 0(t0)
+
+        mv a0, s1
+        jal rand
+        
+        #updating player y (column) coordinate
+        la t0, player
+        sb a0, 1(t0)
+
+        #checking if player location is equal to box location and fixing if so...
+        la a0, player
+        la a1, box
+        jal check_equal_locations
+        beq a0, zero, gen_locations_player
 
 
     gen_locations_target:
@@ -439,13 +442,47 @@ gen_locations:
         la a1, box
         jal check_equal_locations
         beq a0, zero, gen_locations_target
+
+        #making sure player can actually move the box to the target...
+        #there are cases where the box is adjacent to a boundary wall (but not in a corner)
+        #yet no combination of moves can move the box to the target square
+        la a0, box
+        lb a0, 0(a0)
+        jal is_adjacent_to_horizontal_boundaries
+        beq t0, zero, gen_locations_target_h
+        
+        la a0, box
+        lb a0, 1(a0)
+        jal is_adjacent_to_vertical_boundaries
+        beq t0, zero, gen_locations_target_v
+
+        j gen_locations_end
+
+        gen_locations_target_h:
+            la t0, box
+            lb t0, 0(t0)
+            la t1, target
+            lb t1, 0(t1)
+            bne t0, t1, gen_locations_target
+
+            j gen_locations_end
+
+        gen_locations_target_v:
+            la t0, box
+            lb t0, 1(t0)
+            la t1, target
+            lb t1, 1(t1)
+            bne t0, t1, gen_locations_target
+
+            j gen_locations_end
     
 
-    lw s1, 0(sp)
-    lw s0, 4(sp)
-    lw ra, 8(sp)
-    addi sp, sp, 12
-    jr ra
+    gen_locations_end:
+        lw s1, 0(sp)
+        lw s0, 4(sp)
+        lw ra, 8(sp)
+        addi sp, sp, 12
+        jr ra
 
 
 
@@ -617,6 +654,12 @@ print_illegal_move_warning:
     ecall
     jr ra
 
+print_restart_notice:
+    la a0, restart_notice_string
+    li a7, 4
+    ecall
+    jr ra
+
 #
 #####<END>#####
 #
@@ -776,4 +819,118 @@ is_boundary:
 
     is_boundary_1:
         li a0, 1
+        jr ra
+
+#arguments:
+#a0 and a1 are the set of coordinates (row, column)
+#sets a0 to 0 if true and 1 if false
+is_corner:
+    #storing on stack
+    addi sp, sp, -4
+    sw ra, 0(sp)
+    addi sp, sp, -4
+    sw s0, 0(sp)
+    addi sp, sp, -4
+    sw s1, 0(sp)
+    addi sp, sp, -4
+    sw s2, 0(sp)
+    addi sp, sp, -4
+    sw s3, 0(sp)
+
+    mv s0, a0        
+    mv s1, a1
+
+    la t0, gridsize
+    lb s2, 0(t0) #r
+    lb s3, 1(t0) #c
+
+    mv a0, s0
+    mv a1, s1
+    li a2, 1
+    li a3, 1
+    jal check_equal_coordinates
+    beq a0, zero, is_corner_0
+    
+    mv a0, s0
+    mv a1, s1
+    li a2, 1
+    addi a3, s3, -2
+    jal check_equal_coordinates
+    beq a0, zero, is_corner_0
+
+    mv a0, s0
+    mv a1, s1
+    addi a2, s2, -2
+    li a3, 1
+    jal check_equal_coordinates
+    beq a0, zero, is_corner_0
+
+    mv a0, s0
+    mv a1, s1
+    addi a2, s2, -2
+    addi a3, s3, -2
+    jal check_equal_coordinates
+    beq a0, zero, is_corner_0
+
+    j is_corner_1
+
+    is_corner_0:
+        li a0, 0
+        j is_corner_end
+
+    is_corner_1:
+        li a0, 1
+        j is_corner_end
+
+    is_corner_end:
+        #popping stack
+        lw s3, 0(sp)
+        lw s2, 4(sp)
+        lw s1, 8(sp)
+        lw s0, 12(sp)
+        lw ra, 16(sp)
+        addi sp, sp, 20
+
+        jr ra
+
+#arguments:
+#a0 is the row coordinate
+#sets a0 to 0 if true and 1 if false
+is_adjacent_to_horizontal_boundaries:
+    la t0, gridsize
+    lb t0, 0(t0)
+    addi t0, t0, -2
+
+    li t1, 1
+
+    beq a0, t1, is_adjacent_to_horizontal_boundaries_0
+    beq a0, t0, is_adjacent_to_horizontal_boundaries_0
+    
+
+    is_adjacent_to_horizontal_boundaries_1:
+        li a0, 1
+        jr ra
+    is_adjacent_to_horizontal_boundaries_0:
+        li a0, 0
+        jr ra
+
+#arguments:
+#a0 is the column coordinate
+#sets a0 to 0 if true and 1 if false
+is_adjacent_to_vertical_boundaries:
+    la t0, gridsize
+    lb t0, 1(t0)
+    addi t0, t0, -2
+
+    li t1, 1
+
+    beq a0, t1, is_adjacent_to_vertical_boundaries_0
+    beq a0, t0, is_adjacent_to_vertical_boundaries_0
+    
+
+    is_adjacent_to_vertical_boundaries_1:
+        li a0, 1
+        jr ra
+    is_adjacent_to_vertical_boundaries_0:
+        li a0, 0
         jr ra
