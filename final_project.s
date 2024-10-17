@@ -28,10 +28,16 @@ box_on_target_char: .byte '*'
 #allows player, box, and target to potentially spawn on boundary squares
 allow_boundary_spawn: .byte 1 #0 for true, 1 for false
 
+#north,east,south,west,restart,exit
+input_controls: .byte 0, 1, 2, 3, -1, -2
+
+
 
 newline: .string "\n"
 prompt: .string "> "
 clash: .string "location clash\n"
+invalid_input_string: .string "Invalid input...try again\n"
+illegal_move_string: .string "Cannot perform that move...try again\n" #illegal moves are ones like trying to go through a wall or pushing a box with a wall behind it
 
 .text
 .globl _start
@@ -86,8 +92,53 @@ game:
         li a7, 1
         ecall
 
-        #input can be 0(north), 1(east), 2(south), 3(west), -1(restart to original position), -2(exit)
+        jal move
+        #input can be (for default input controls) 0(north), 1(east), 2(south), 3(west), -1(restart to original position), -2(exit)...anything else and we print a warning
+        la t0, input_controls
         
+        #offsets in s0 and s1
+
+        li s0, -1
+        li s1, 0
+        lb t0, 0(t0)
+        beq a0, t0, m
+
+        li s0, 0
+        li s1, 1
+        lb t0, 1(t0)
+        beq a0, t0, m
+        
+        li s0, 1
+        li s1, 0
+        lb t0, 2(t0)
+        beq a0, t0, m
+        
+        li s0, 0
+        li s1, -1
+        lb t0, 3(t0)
+        beq a0, t0, m
+        
+        lb t0, 4(t0)
+        beq a0, t0, restart_game
+        
+        lb t0, 5(t0)
+        beq a0, t0, game_end
+
+        #any other input gets redirected to warning
+        jal print_invalid_input_warning
+        j game_loop
+
+        m:
+            mv a0, s0
+            mv a1, s1
+
+            jal move
+            j game_loop
+
+        
+        
+    restart_game:
+        #TODO
 
 
     game_end:
@@ -96,6 +147,129 @@ game:
         lw ra, 8(sp)
         addi sp, sp, 12
         jr ra
+
+exit:
+    li a7, 10
+    ecall
+    
+    
+# --- HELPER FUNCTIONS ---
+
+#
+#####<START> MOVE FUNCTIONS
+#
+
+#a0 is row offset, a1 is column offset
+move:
+    addi sp, sp, -4
+    sw ra, 0(sp)
+    addi sp, sp, -4
+    sw s0, 0(sp)
+    addi sp, sp, -4
+    sw s1, 0(sp)
+    addi sp, sp, -4
+    sw s2, 0(sp)
+    addi sp, sp, -4
+    sw s3, 0(sp)
+
+    #player's coordinates
+    la t0, player
+    lb t1, 0(player) #row
+    lb t2, 1(player) #column
+    
+    #saving offsets
+    mv s2, a0
+    mv s3, s1
+
+    #dest coordinates
+    addi s0, t1, a0
+    addi s1, t2, a1
+
+    #find what block is at dest
+    mv a0, s0
+    mv a1, s1
+    jal get_object_at_coordinate
+
+    #check if the object is a wall
+    la t0, wall_char
+    beq a0, t0, dest_wall
+
+    #check if the object is an empty square or target square (which is technically an empty square and is regarded as such)
+    la t0, empty_square_char
+    beq a0, t0, dest_empty_square
+
+    #check if the object is a box
+    la t0, box_char
+    beq a0, t0, dest_box
+
+    j move_end
+
+    dest_wall:
+        jal print_illegal_move_warning
+        j move_end
+        
+    dest_empty_square:
+        la a0, player
+        mv a1, s0
+        mv a2, s1
+        update_object_location
+        j move_end
+    
+    dest_box:
+        #check that there is room for the box to move by offsetting the dest
+        add a0, s0, s2 #s0 is row number of dest, s2 is row offset
+        add a1, s1, s3
+        jal get_object_at_coordinate
+
+        la t0, wall_char
+        beq a0, t0, no_room #there's a wall behind the box
+
+        #case if there is room - update player and box locations
+        la a0, player
+        mv a1, s0
+        mv a2, s1
+        update_object_location
+        
+        la a0, box
+        add a1, s0, s2
+        add a2, s1, s3
+        update_object_location
+        
+        j move_end
+
+        no_room:
+            print_illegal_move_warning
+            j move_end
+        
+
+    move_end:
+        lw s3, 0(sp)
+        lw s2, 4(sp)
+        lw s1, 8(sp)
+        lw s0, 12(sp)
+        lw ra, 16(sp)
+        addi sp, sp, 20
+        jr ra
+
+#
+#####<END>#####
+#
+
+
+#
+#####<START> LOCATION UPDATE FUNCTIONS
+#
+
+#a0 is object's address, a1 is new row, a2 is new column
+update_object_location:
+    sb a1, 0(a0)
+    sb a2, 1(a0)
+    jr ra
+
+#
+#####<END>#####
+#
+
 
 store_initial_positions:
     la t0, player_initial
@@ -145,12 +319,6 @@ load_initial_positions:
 
     jr ra
 
-exit:
-    li a7, 10
-    ecall
-    
-    
-# --- HELPER FUNCTIONS ---
 
 gen_locations:
     #storing original values on stack
@@ -417,6 +585,18 @@ print_multiple_newlines:
         jr ra
 
 
+print_invalid_input_warning:
+    la a0, invalid_input_string
+    li a7, 4
+    ecall
+    jr ra
+
+print_illegal_move_warning:
+    la a0, illegal_move_string
+    li a7, 4
+    ecall
+    jr ra
+
 #
 #####<END>#####
 #
@@ -530,12 +710,10 @@ get_object_at_coordinate:
     ################## 4
     #wall only at boundaries (first and last rows and columns)    
     la s0, wall_char
-
-
     jal is_boundary
     beq a0, zero, get_object_at_coordinate_end
     ################## 5
-    #TODO: everything else is an empty square
+    #TODO: everything else is an empty square (including target)
     la s0, empty_square_char
 
 
