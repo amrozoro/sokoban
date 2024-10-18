@@ -1,5 +1,5 @@
 .data
-#for random: (DO NOT CHANGE)
+#parameters for random: (DO NOT CHANGE)
 a: .word 6
 c: .word 1
 m: .word 25
@@ -20,6 +20,7 @@ target_initial: .byte 0,0
 
 space_char: .byte ' '
 
+#object chars
 wall_char: .byte 'X' #. or X
 empty_square_char: .byte '.' #. or _
 player_char: .byte 'P'
@@ -150,9 +151,155 @@ exit:
     
 # --- HELPER FUNCTIONS ---
 
-#
-#####<START> MOVE FUNCTIONS
-#
+gen_locations:
+    #storing original values on stack
+    addi sp, sp, -12
+    sw ra, 8(sp)
+    sw s0, 4(sp)
+    sw s1, 0(sp)
+
+    #todo remove
+    #locations may be on boundaries
+    la t0, allow_boundary_spawn
+    lb t0, 0(t0)
+
+    #max row
+    la s0, gridsize
+    lb s0, 0(s0)
+    sub s0, s0, t0
+    #max column
+    la s1, gridsize
+    lb s1, 1(s1)
+    sub s1, s1, t0
+    
+    gen_locations_box:
+        #TODO remove
+        la a0, clash
+        li a7, 4
+        ecall
+        #
+
+        mv a0, s0
+        jal rand
+
+        #updating box x (row) coordinate
+        la t0, box
+        sb a0, 0(t0)
+
+        mv a0, s1
+        jal rand
+        
+        #updating box y (column) coordinate
+        la t0, box
+        sb a0, 1(t0)
+
+        #making sure box does not spawn in a corner (because then the player won't be able to move it)
+        la t0, box
+        lb a0, 0(t0)
+        lb a1, 1(t0)
+        jal is_corner
+
+        li a7, 1
+        ecall
+
+        beq a0, zero, gen_locations_box
+
+
+
+    gen_locations_player:
+        mv a0, s0
+        jal rand
+
+        #updating player x (row) coordinate
+        la t0, player
+        sb a0, 0(t0)
+
+        mv a0, s1
+        jal rand
+        
+        #updating player y (column) coordinate
+        la t0, player
+        sb a0, 1(t0)
+
+        #checking if player location is equal to box location and fixing if so...
+        la a0, player
+        la a1, box
+        jal check_equal_locations
+        beq a0, zero, gen_locations_player
+
+
+    gen_locations_target:
+        #TODO remove
+        la a0, clash
+        li a7, 4
+        ecall
+        #
+
+        mv a0, s0
+        jal rand
+
+        #updating target x (row) coordinate
+        la t0, target
+        sb a0, 0(t0)
+
+        mv a0, s1
+        jal rand
+
+        #updating target y (column) coordinate
+        la t0, target
+        sb a0, 1(t0)
+
+        #checking if target location is equal to the box location or player location and fixing if so...
+        la a0, target
+        la a1, player
+        jal check_equal_locations
+        beq a0, zero, gen_locations_target
+        la a0, target
+        la a1, box
+        jal check_equal_locations
+        beq a0, zero, gen_locations_target
+
+        #making sure player can actually move the box to the target...
+        #there are cases where the box is adjacent to a boundary wall (but not in a corner)
+        #yet no combination of moves can move the box to the target square
+        la a0, box
+        lb a0, 0(a0)
+        jal is_adjacent_to_horizontal_boundaries
+        beq a0, zero, gen_locations_target_h
+        
+        la a0, box
+        lb a0, 1(a0)
+        jal is_adjacent_to_vertical_boundaries
+        beq a0, zero, gen_locations_target_v
+
+        j gen_locations_end
+
+        gen_locations_target_h:
+            la t0, box
+            lb t0, 0(t0)
+            la t1, target
+            lb t1, 0(t1)
+            bne t0, t1, gen_locations_target
+
+            j gen_locations_end
+
+        gen_locations_target_v:
+            la t0, box
+            lb t0, 1(t0)
+            la t1, target
+            lb t1, 1(t1)
+            bne t0, t1, gen_locations_target
+
+            j gen_locations_end
+    
+
+    gen_locations_end:
+        lw s1, 0(sp)
+        lw s0, 4(sp)
+        lw ra, 8(sp)
+        addi sp, sp, 12
+        jr ra
+
 
 #a0 is row offset, a1 is column offset
 move:
@@ -279,24 +426,12 @@ move:
         addi sp, sp, 20
         jr ra
 
-#
-#####<END>#####
-#
-
-
-#
-#####<START> LOCATION UPDATE FUNCTIONS
-#
 
 #a0 is object's address, a1 is new row, a2 is new column
 update_object_location:
     sb a1, 0(a0)
     sb a2, 1(a0)
     jr ra
-
-#
-#####<END>#####
-#
 
 
 store_initial_positions:
@@ -348,207 +483,7 @@ load_initial_positions:
     jr ra
 
 
-gen_locations:
-    #storing original values on stack
-    addi sp, sp, -12
-    sw ra, 8(sp)
-    sw s0, 4(sp)
-    sw s1, 0(sp)
-
-    #todo remove
-    #locations may be on boundaries
-    la t0, allow_boundary_spawn
-    lb t0, 0(t0)
-
-    #max row
-    la s0, gridsize
-    lb s0, 0(s0)
-    sub s0, s0, t0
-    #max column
-    la s1, gridsize
-    lb s1, 1(s1)
-    sub s1, s1, t0
-    
-    gen_locations_box:
-        #TODO remove
-        la a0, clash
-        li a7, 4
-        ecall
-        #
-
-        mv a0, s0
-        jal rand
-
-        #updating box x (row) coordinate
-        la t0, box
-        sb a0, 0(t0)
-
-        mv a0, s1
-        jal rand
-        
-        #updating box y (column) coordinate
-        la t0, box
-        sb a0, 1(t0)
-
-        #making sure box does not spawn in a corner (because then the player won't be able to move it)
-        la t0, box
-        lb a0, 0(t0)
-        lb a1, 1(t0)
-        jal is_corner
-
-        li a7, 1
-        ecall
-
-        beq a0, zero, gen_locations_box
-
-
-
-    gen_locations_player:
-        mv a0, s0
-        jal rand
-
-        #updating player x (row) coordinate
-        la t0, player
-        sb a0, 0(t0)
-
-        mv a0, s1
-        jal rand
-        
-        #updating player y (column) coordinate
-        la t0, player
-        sb a0, 1(t0)
-
-        #checking if player location is equal to box location and fixing if so...
-        la a0, player
-        la a1, box
-        jal check_equal_locations
-        beq a0, zero, gen_locations_player
-
-
-    gen_locations_target:
-        #TODO remove
-        la a0, clash
-        li a7, 4
-        ecall
-        #
-
-        mv a0, s0
-        jal rand
-
-        #updating target x (row) coordinate
-        la t0, target
-        sb a0, 0(t0)
-
-        mv a0, s1
-        jal rand
-
-        #updating target y (column) coordinate
-        la t0, target
-        sb a0, 1(t0)
-
-        #checking if target location is equal to the box location or player location and fixing if so...
-        la a0, target
-        la a1, player
-        jal check_equal_locations
-        beq a0, zero, gen_locations_target
-        la a0, target
-        la a1, box
-        jal check_equal_locations
-        beq a0, zero, gen_locations_target
-
-        #making sure player can actually move the box to the target...
-        #there are cases where the box is adjacent to a boundary wall (but not in a corner)
-        #yet no combination of moves can move the box to the target square
-        la a0, box
-        lb a0, 0(a0)
-        jal is_adjacent_to_horizontal_boundaries
-        beq t0, zero, gen_locations_target_h
-        
-        la a0, box
-        lb a0, 1(a0)
-        jal is_adjacent_to_vertical_boundaries
-        beq t0, zero, gen_locations_target_v
-
-        j gen_locations_end
-
-        gen_locations_target_h:
-            la t0, box
-            lb t0, 0(t0)
-            la t1, target
-            lb t1, 0(t1)
-            bne t0, t1, gen_locations_target
-
-            j gen_locations_end
-
-        gen_locations_target_v:
-            la t0, box
-            lb t0, 1(t0)
-            la t1, target
-            lb t1, 1(t1)
-            bne t0, t1, gen_locations_target
-
-            j gen_locations_end
-    
-
-    gen_locations_end:
-        lw s1, 0(sp)
-        lw s0, 4(sp)
-        lw ra, 8(sp)
-        addi sp, sp, 12
-        jr ra
-
-
-
-
-
-# Arguments: an integer MAX in a0
-# Return: A number from 1 (inclusive) to MAX (exclusive)
-# X_n+1 = (a*X_n + c) % m
-rand:
-    #loading equation parameters
-    la t0, a
-    lw t0, 0(t0)
-
-    la t1, c
-    lw t1, 0(t1)
-    
-    la t2, m
-    lw t2, 0(t2)
-
-    #argument passed to function
-    mv t3, a0
-
-    # #getting random seed using time syscall (seed stored in a0)
-    # li a7, 30
-    # ecall
-    # remu a0, a0, t2
-
-    la a0, seed
-    lw a0, 0(a0)
-    
-    mul a0, a0, t0
-    add a0, a0, t1
-    remu a0, a0, t2
-
-    #update seed BEFORE adjusting for argument
-    la t4, seed
-    sw a0, 0(t4)
-
-    remu a0, a0, t3
-	
-    bne a0, zero, rand_end
-
-	li a0, 1
-
-    rand_end:        
-        jr ra
-
-
-#
-#####<START> PRINT FUNCTIONS
-#
-
-#Arguments: N/A
+#arguments: N/A
 printBoard:
     #store ra using stack
     addi sp, sp, -4
@@ -636,7 +571,8 @@ printNewline:
     ecall
     jr ra
 
-# argument: a0 (number of newlines), assumed to be > 0
+#argument:
+#a0 (number of newlines), assumed to be > 0
 print_multiple_newlines:
     li t0, 0 #counter
     mv t1, ra
@@ -678,14 +614,6 @@ print_congrats_message:
     ecall
     jr ra
 
-#
-#####<END>#####
-#
-
-
-#
-#####<START> CHECK EQUAL FUNCTIONS
-#
 
 #arguments:
 #a0 and a1 are the addresses of the locations in memory
@@ -749,9 +677,6 @@ check_equal_coordinates:
         li a0, 1
         jr ra
 
-#
-#####<END>#####
-#
 
 #arguments:
 #a0 and a1 are the set of coordinates (row, column)
@@ -951,4 +876,46 @@ is_adjacent_to_vertical_boundaries:
         jr ra
     is_adjacent_to_vertical_boundaries_0:
         li a0, 0
+        jr ra
+
+# Arguments: an integer MAX in a0
+# Return: A number from 1 (inclusive) to MAX (exclusive)
+# X_n+1 = (a*X_n + c) % m
+rand:
+    #loading equation parameters
+    la t0, a
+    lw t0, 0(t0)
+
+    la t1, c
+    lw t1, 0(t1)
+    
+    la t2, m
+    lw t2, 0(t2)
+
+    #argument passed to function
+    mv t3, a0
+
+    # #getting random seed using time syscall (seed stored in a0)
+    # li a7, 30
+    # ecall
+    # remu a0, a0, t2
+
+    la a0, seed
+    lw a0, 0(a0)
+    
+    mul a0, a0, t0
+    add a0, a0, t1
+    remu a0, a0, t2
+
+    #update seed BEFORE adjusting for argument
+    la t4, seed
+    sw a0, 0(t4)
+
+    remu a0, a0, t3
+	
+    bne a0, zero, rand_end
+
+	li a0, 1
+
+    rand_end:        
         jr ra
