@@ -1,9 +1,17 @@
 .data
+#---Pseudo random number generator algorithm citation:---
+#PRNG name: Linear congruential generator
+#Published in 1958 by W. E. Thomson and A. Rotenberg.
+#Link: https://en.wikipedia.org/wiki/Linear_congruential_generator
+
+#function is located under the "rand" label
+
+
 #parameters for random: (DO NOT CHANGE)
 a: .word 6
 c: .word 1
 m: .word 25
-seed: .word 100 #will be manipulated as the game progresses
+seed: .word 100 #chosen randomly, will be manipulated as the game progresses
 
 sleep_factor: .word 250 #how much time to sleep before printing board again (in ms)
 
@@ -33,8 +41,8 @@ box_on_target_char: .byte '*'
 allow_boundary_spawn: .byte 1 #0 for true, 1 for false
 
 #north,east,south,west,restart,exit
-input_controls: .byte 0, 1, 2, 3, -1, -2
-
+input_controls: .byte 0, 1, 2, 3, 4, 5
+input_controls_count: .byte 6
 
 #strings
 newline: .string "\n"
@@ -45,6 +53,8 @@ illegal_move_string: .string "Cannot perform that move...try again\n" #illegal m
 restart_notice_string: .string "*************************\n*****RESTARTING GAME*****\n*************************"
 congrats_message_string: .string "Congrats! You have completed the game!\n"
 
+input_controls_string: .string "**CONTROLS**\n0: north\n1: east\n2: south\n3: west\n4: restart to original position\n5: exit game\n"
+
 .text
 .globl _start
 
@@ -52,6 +62,8 @@ _start:
     #todo: print welcome string
     jal gen_locations
     jal printBoard
+
+    jal print_controls
 
     jal game
 
@@ -573,6 +585,13 @@ printNewline:
 
 #argument:
 #a0 (number of newlines), assumed to be > 0
+print_controls:
+    la a0, input_controls_string
+    li a7, 4
+    ecall
+    jr ra
+
+
 print_multiple_newlines:
     li t0, 0 #counter
     mv t1, ra
