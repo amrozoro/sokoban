@@ -3,8 +3,13 @@
 #PRNG name: Linear congruential generator
 #Published in 1958 by W. E. Thomson and A. Rotenberg.
 #Link: https://en.wikipedia.org/wiki/Linear_congruential_generator
+#Useful YT video: https://www.youtube.com/watch?v=kRCmR4qr-hQ&t=1s
 
-#function is located under the "rand" label
+#function is located under the "rand" label (last function)
+
+#---Enhancements:
+#1) Multiplayer - mostly in functions setup, getplayercount, playerloop and updateleaderboard
+#2) Undo - mostly in functions setup, setupheap, playerloop, and move
 
 
 #parameters for random: (DO NOT CHANGE)
@@ -13,7 +18,41 @@ c: .word 1
 m: .word 25
 seed: .word 100 #chosen randomly, will be manipulated as the game progresses
 
-sleep_factor: .word 250 #how much time to sleep before printing board again (in ms)
+sleep_factor_board: .word 250 #how much time to sleep before printing board again (in ms)
+sleep_factor_turn: .word 2000 #how much time to sleep before switching turn to next player (in ms)
+
+#heap stuff
+
+#address (represented as an integer) of the move count of first (or only) player
+MOVE_COUNT_HEAP_START: .word 0x10000000
+
+#address (represented as an integer) of the first move of the current (or only) player.
+#This will be dynamically calculated to be directly after MOVE_COUNT_HEAP_START (which is why it is 0 for now)
+MOVE_HISTORY_HEAP_START: .word 0
+
+#integer representing the number of moves currently logged in history
+#(remember that each undo removes the latest move in the history and decreases the NUM_MOVES_IN_HISTORY)
+NUM_MOVES_IN_HISTORY: .word 0
+
+#integer representing the size (in bytes) of one move stored in memory
+MOVE_MEMORY_SIZE: .word 8
+
+#NOTE:
+# every move takes up exactly MOVE_MEMORY_SIZE bytes in memory and is represented by the:
+#1. move number (.word), this may not be (previous move's move number + 1) because of the fact that undo exists
+#2. location of player (.byte x 2)
+#3. location of box (.byte x 2)
+#and in that specific order
+
+
+#Multiplayer stuff
+NUM_PLAYERS: .word 0
+current_player_turn: .word 0 #player number
+
+
+#leaderboard (least num of moves)
+leaderboard: .word 0, 0, 0
+
 
 #board stuff
 gridsize:   .byte 8,8 #not a hard-coded value, format is (row, column)
@@ -46,34 +85,31 @@ input_controls_count: .byte 6
 
 #strings
 newline: .string "\n"
+semicolon: .string ": "
 prompt: .string "> "
 clash: .string "location clash\n"
 invalid_input_string: .string "Invalid input...try again\n"
 illegal_move_string: .string "Cannot perform that move...try again\n" #illegal moves are ones like trying to go through a wall or pushing a box with a wall behind it
 restart_notice_string: .string "*************************\n*****RESTARTING GAME*****\n*************************"
 congrats_message_string: .string "Congrats! You have completed the game!\n"
+input_controls_string: .string "\n**CONTROLS**\n0: north\n1: east\n2: south\n3: west\n4: restart to original position\n5: exit game\n"
+player_count_prompt_string: .string "Enter the number of players (> 0): "
+player_count_error_string: .string "Error: Player count must be greater than 0\n"
+player_number_label: .string "\nPLAYER "
 
-input_controls_string: .string "**CONTROLS**\n0: north\n1: east\n2: south\n3: west\n4: restart to original position\n5: exit game\n"
+leaderboard_first_string: .string "\nFirst place number of moves: "
+leaderboard_second_string: .string "\nSecond place number of moves: "
+leaderboard_third_string: .string "\nThird place number of moves: "
 
 .text
 .globl _start
 
 _start:
-    #todo: print welcome string
+    jal setup
+    
     jal gen_locations
-    jal printBoard
 
-    jal print_controls
-
-    jal game
-
-    # You will also need to restart the game if the user requests it and 
-    # indicate when the box is located in the same position as the target.
-    # For the former, it may be useful for this loop to exist in a function,
-    # to make it cleaner to exit the game loop.
-
-    # TODO: That's the base game! Now, pick a pair of enhancements and
-    # consider how to implement them.
+    jal player_loop
 
     j exit
 
@@ -85,8 +121,6 @@ game:
     sw s0, 0(sp)
     addi sp, sp, -4
     sw s1, 0(sp)
-
-    jal store_initial_positions
 
     j game_loop
     
@@ -140,6 +174,10 @@ game:
             mv a1, s1
 
             jal move
+
+            #check if game ended
+            beq a0, zero, game_end
+
             j game_loop
  
     restart_game:
@@ -162,6 +200,175 @@ exit:
     
     
 # --- HELPER FUNCTIONS ---
+setup:
+    addi sp, sp, -4
+    sw ra, 0(sp)
+
+    jal get_player_count
+    jal setup_heap
+
+    lw ra, 0(sp)
+    addi sp, sp, 4
+    jr ra
+
+
+get_player_count:
+    la a0, player_count_prompt_string
+    li a7, 4
+    ecall
+
+    li a7, 5
+    ecall
+
+    li t0, 1
+
+    blt a0, t0, get_player_count
+
+    la t0, NUM_PLAYERS
+    sw a0, 0(t0)
+
+    jr ra
+
+
+setup_heap:
+    la t0, MOVE_COUNT_HEAP_START
+    lw t0, 0(t0) #address
+    la t1, MOVE_HISTORY_HEAP_START
+    lw t1, 0(t1) #address
+    la t2, NUM_PLAYERS
+    lw t2, 0(t2)
+    li t3, 4 #size of word in bytes
+
+    # need to calculate address of MOVE_HISTORY_HEAP_START
+    mul t4, t2, t3 #offset
+
+    add t5, t0, t4
+    la t1, MOVE_HISTORY_HEAP_START
+    sw t5, 0(t1)
+
+    jr ra
+
+
+player_loop:
+    addi sp, sp, -4
+    sw ra, 0(sp)
+
+    player_loop_begin:
+        jal print_controls
+
+        #print label to show player number
+        la a0, player_number_label
+        li a7, 4
+        ecall
+        la a0, current_player_turn
+        lw a0, current_player_turn
+        li a7, 1
+        ecall
+        la a0, newline
+        li a7, 4
+        ecall
+
+        #sleep
+        la a0, sleep_factor_turn
+        lw a0, 0(a0)
+        li a7, 32
+        ecall
+
+        jal load_initial_positions
+        jal printBoard
+        jal game
+        jal update_leaderboard
+
+        #increment player turn
+        la t0, current_player_turn
+        lw t1, 0(t0)
+        addi t1, t1, 1
+        sw t1, 0(t0)
+
+        la t2, NUM_PLAYERS
+        lw t2, 0(t2)
+        blt t1, t2, player_loop_begin
+
+    jal print_leaderboard
+    lw ra, 0(sp)
+    addi sp, sp, 4
+    jr ra
+
+
+update_leaderboard:
+    addi sp, sp, -4
+    sw ra, 0(sp)
+
+    la t0, current_player_turn
+    lw t0, 0(t0)
+    mv a0, t0
+    jal get_num_moves
+
+    la a1, leaderboard
+    lw t1, 0(a1)
+    lw t2, 4(a1)
+    lw t3, 8(a1)
+
+    bgt a0, t1, update_leaderboard_first
+    bgt a0, t2, update_leaderboard_second
+    bgt a0, t3, update_leaderboard_third
+
+    j update_leaderboard_end
+
+    update_leaderboard_first:
+        la t0, leaderboard
+        sw a0, 0(t0)
+        sw t1, 4(t0)
+        sw t2, 8(t0)
+        j update_leaderboard_end
+    update_leaderboard_second:
+        la t0, leaderboard
+        sw a0, 4(t0)
+        sw t2, 8(t0)
+        j update_leaderboard_end
+    update_leaderboard_third:
+        la t0, leaderboard
+        sw a0, 8(t0)
+        j update_leaderboard_end
+    update_leaderboard_end:
+        lw ra, 0(sp)
+        addi sp, sp, 4
+        jr ra
+
+
+#arguments:
+#a0 stores player number [0 to NUM_PLAYERS-1]
+#sets a0 to appropriate move count of player
+get_num_moves:
+    li t1, 4
+    mul t1, a0, t1 #byte offset
+    
+    la t0, MOVE_COUNT_HEAP_START
+    lw t0, 0(t0)
+    add t0, t0, t1
+
+    lw a0, 0(t0) #current number of moves
+
+    jr ra
+
+
+#arguments:
+#a0 stores player number [0 to NUM_PLAYERS-1]
+increment_move_counter:
+    li t1, 4
+    mul t1, a0, t1 #byte offset
+    
+    la t0, MOVE_COUNT_HEAP_START
+    lw t0, 0(t0)
+    add t0, t0, t1
+
+    lw t1, 0(t0) #current number of moves
+    addi t1, t1, 1
+    sw t1, 0(t0)
+
+    jr ra
+
+
 
 gen_locations:
     #storing original values on stack
@@ -170,7 +377,6 @@ gen_locations:
     sw s0, 4(sp)
     sw s1, 0(sp)
 
-    #todo remove
     #locations may be on boundaries
     la t0, allow_boundary_spawn
     lb t0, 0(t0)
@@ -185,11 +391,11 @@ gen_locations:
     sub s1, s1, t0
     
     gen_locations_box:
-        #TODO remove
-        la a0, clash
-        li a7, 4
-        ecall
-        #
+        # #TODO remove/comment out
+        # la a0, clash
+        # li a7, 4
+        # ecall
+        # #
 
         mv a0, s0
         jal rand
@@ -210,9 +416,6 @@ gen_locations:
         lb a0, 0(t0)
         lb a1, 1(t0)
         jal is_corner
-
-        li a7, 1
-        ecall
 
         beq a0, zero, gen_locations_box
 
@@ -241,11 +444,11 @@ gen_locations:
 
 
     gen_locations_target:
-        #TODO remove
-        la a0, clash
-        li a7, 4
-        ecall
-        #
+        # #TODO remove/comment out
+        # la a0, clash
+        # li a7, 4
+        # ecall
+        # #
 
         mv a0, s0
         jal rand
@@ -306,6 +509,7 @@ gen_locations:
     
 
     gen_locations_end:
+        jal store_initial_positions
         lw s1, 0(sp)
         lw s0, 4(sp)
         lw ra, 8(sp)
@@ -314,6 +518,7 @@ gen_locations:
 
 
 #a0 is row offset, a1 is column offset
+#returns 0 if move resulted in box being placed on target (game completed) and 1 otherwise
 move:
     addi sp, sp, -4
     sw ra, 0(sp)
@@ -371,7 +576,7 @@ move:
         jal update_object_location
 
         #wait a little then print board
-        la a0, sleep_factor
+        la a0, sleep_factor_board
         lw a0, 0(a0)
         li a7, 32
         ecall
@@ -379,7 +584,7 @@ move:
         #print updated board
         jal printBoard
 
-        j move_end
+        j move_successful
     
     dest_box:
         #check that there is room for the box to move by offsetting the dest
@@ -409,7 +614,7 @@ move:
         beq a0, zero, completed
 
         #wait a little then print board
-        la a0, sleep_factor
+        la a0, sleep_factor_board
         lw a0, 0(a0)
         li a7, 32
         ecall
@@ -417,7 +622,7 @@ move:
         #print updated board
         jal printBoard
 
-        j move_end
+        j move_successful
 
         no_room:
             jal print_illegal_move_warning
@@ -425,10 +630,16 @@ move:
 
         completed:
             jal print_congrats_message
-            li a7, 10
-            ecall
+            li a0, 0
+            j move_end
         
 
+    move_successful: #move successful (but game not completed)
+        la a0, current_player_turn
+        lw a0, 0(a0)
+        jal increment_move_counter
+
+        li a0, 1 #to indicate game not completed yet
     move_end:
         lw s3, 0(sp)
         lw s2, 4(sp)
@@ -583,8 +794,7 @@ printNewline:
     ecall
     jr ra
 
-#argument:
-#a0 (number of newlines), assumed to be > 0
+
 print_controls:
     la a0, input_controls_string
     li a7, 4
@@ -592,6 +802,8 @@ print_controls:
     jr ra
 
 
+#argument:
+#a0 (number of newlines), assumed to be > 0
 print_multiple_newlines:
     li t0, 0 #counter
     mv t1, ra
@@ -631,6 +843,43 @@ print_congrats_message:
     la a0, congrats_message_string
     li a7, 4
     ecall
+    jr ra
+
+
+print_leaderboard:
+    la t0, leaderboard
+    
+    la a0, leaderboard_first_string
+    li a7, 4
+    ecall
+    lw a0, 0(t0)
+    li a7, 1
+    ecall
+    la a0, newline
+    li a7, 4
+    ecall
+    
+    la a0, leaderboard_second_string
+    li a7, 4
+    ecall
+    lw a0, 4(t0)
+    li a7, 1
+    ecall
+    la a0, newline
+    li a7, 4
+    ecall
+    
+    la a0, leaderboard_third_string
+    li a7, 4
+    ecall
+    lw a0, 8(t0)
+    li a7, 1
+    ecall
+    la a0, newline
+    li a7, 4
+    ecall
+
+
     jr ra
 
 
@@ -738,7 +987,7 @@ get_object_at_coordinate:
     jal is_boundary
     beq a0, zero, get_object_at_coordinate_end
     ################## 5
-    #TODO: everything else is an empty square (including target)
+    #everything else is an empty square (including target)
     la s0, empty_square_char
 
 
