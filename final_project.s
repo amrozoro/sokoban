@@ -96,6 +96,7 @@ input_controls_string: .string "\n**CONTROLS**\n0: north\n1: east\n2: south\n3: 
 player_count_prompt_string: .string "Enter the number of players (> 0): "
 player_count_error_string: .string "Error: Player count must be greater than 0\n"
 player_number_label: .string "\nPLAYER "
+player_on_target_string: .string "\nAlert: You are standing on the target square\n"
 
 leaderboard_first_string: .string "\nFirst place number of moves: "
 leaderboard_second_string: .string "\nSecond place number of moves: "
@@ -557,7 +558,7 @@ move:
     la t0, empty_square_char
     beq a0, t0, dest_empty_square
     la t0, target_char
-    beq a0, t0, dest_empty_square
+    beq a0, t0, dest_target_square
 
     #check if the object is a box
     la t0, box_char
@@ -569,6 +570,10 @@ move:
         jal print_illegal_move_warning
         j move_end
         
+    dest_target_square:
+        la a0, player_on_target_string
+        li a7, 4
+        ecall
     dest_empty_square:
         la a0, player
         mv a1, s0
