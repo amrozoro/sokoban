@@ -495,7 +495,7 @@ load_initial_positions:
     jr ra
 
 
-#arguments: N/A
+#arguments: N/A (the locations of each object is stored in the global data segment)
 printBoard:
     #store ra using stack
     addi sp, sp, -4
