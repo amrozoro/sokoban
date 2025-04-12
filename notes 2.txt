@@ -1,5 +1,0 @@
-order .data section in the following order to avoid misalignment issues: word, byte, string (string always last)
-
-? mention in guide that minimum grid size is 3x5 (4x4 does not work because box wouldnt be able to move). also, any combination of grid sizes, whose dimensions' product is less than 15, would not be a valid map
-
-fix all #todo

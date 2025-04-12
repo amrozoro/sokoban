@@ -92,7 +92,7 @@ invalid_input_string: .string "Invalid input...try again\n"
 illegal_move_string: .string "Cannot perform that move...try again\n" #illegal moves are ones like trying to go through a wall or pushing a box with a wall behind it
 restart_notice_string: .string "*************************\n*****RESTARTING GAME*****\n*************************"
 congrats_message_string: .string "Congrats! You have completed the game!\n"
-input_controls_string: .string "\n**CONTROLS**\n0: north\n1: east\n2: south\n3: west\n4: restart to original position\n5: exit game\n"
+input_controls_string: .string "\n**CONTROLS**\n0: north\n1: east\n2: south\n3: west\n4: restart to original position\n5: exit game\n6: undo\n"
 player_count_prompt_string: .string "Enter the number of players (> 0): "
 player_count_error_string: .string "Error: Player count must be greater than 0\n"
 player_number_label: .string "\nPLAYER "
